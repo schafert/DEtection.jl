@@ -61,7 +61,7 @@ function posterior_surface(model::Model, pars::Pars, posterior::Posterior)
     nTime = model.T
     nits = size(posterior.A, 3)
 
-    postA = cat([posterior.A[:, :, i] * Φ' for i in 1:nits]..., dims = 3)
+    postA = stack([posterior.A[:, :, i] * Φ' for i in 1:nits], dims = 3)
     return mean(postA, dims=3)[:,:,1], std(postA, dims=3)[:,:,1]
     
 

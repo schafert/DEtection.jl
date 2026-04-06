@@ -59,6 +59,9 @@ mutable struct Model
   function_names
   response
 
+  # elastic net regularization scale (one value per component/row of A)
+  scale_el::Vector{Float64}
+
 end
 
 Base.show(io::IO, model::Model) =
@@ -72,6 +75,7 @@ Base.show(io::IO, model::Model) =
     " ├─── number of temporal basis functions: ", model.νT, '\n',
     " ├─── SSVS parameters: v0 = " * string(model.v0) * ", v1 = " * string(model.v1), '\n',
     " ├─── learning rate: ", model.learning_rate, '\n',
+    " ├─── elastic net scale: ", model.scale_el, '\n',
     " ├─── time buffer: ", model.buffer, '\n',
     " └─── time batch size: ", model.batch_size)
 #
@@ -181,7 +185,8 @@ function create_pars(Y::Array{Float64,2},
   v1::Float64,
   Λ::Function,
   ΛNames::Vector{String};
-  degree = 4, orderTime = 1, latent_dim = size(Y, 1), covariates = nothing)
+  degree = 4, orderTime = 1, latent_dim = size(Y, 1), covariates = nothing,
+  scale_el = fill(0.01, latent_dim))
 
   L = size(Y, 1)
   T = size(Y, 2)
@@ -247,7 +252,7 @@ function create_pars(Y::Array{Float64,2},
   response = State.StateNames[end]
 
   # store model and parameter values
-  model = Model(T, L, N, D, nbasis, buffer, batch_size, TimeStep, learning_rate, inner_inds, V, H, X, Basis, Λ, ΛNames, v0, v1, function_names, response)
+  model = Model(T, L, N, D, nbasis, buffer, batch_size, TimeStep, learning_rate, inner_inds, V, H, X, Basis, Λ, ΛNames, v0, v1, function_names, response, Vector{Float64}(scale_el))
   pars = Pars(A, M, ΣV, ΣU, gamma, samp_inds, F, dF, State, a_V, A_V, nu_V, a_U, A_U, nu_U, ΣM, π)
 
   return pars, model
@@ -264,7 +269,8 @@ function create_pars(Y::Array{Union{Missing,Float64},2},
   v1::Float64,
   Λ::Function,
   ΛNames::Vector{String};
-  degree = 4, orderTime = 1, latent_dim = size(Y, 1), covariates = nothing)
+  degree = 4, orderTime = 1, latent_dim = size(Y, 1), covariates = nothing,
+  scale_el = fill(0.01, latent_dim))
 
   L = size(Y, 1)
   T = size(Y, 2)
@@ -354,7 +360,7 @@ function create_pars(Y::Array{Union{Missing,Float64},2},
   response = State.StateNames[end]
 
   # store model and parameter values
-  model = Model(T, L, N, D, nbasis, buffer, batch_size, TimeStep, learning_rate, inner_inds, V, H, X, Basis, Λ, ΛNames, v0, v1, function_names, response)
+  model = Model(T, L, N, D, nbasis, buffer, batch_size, TimeStep, learning_rate, inner_inds, V, H, X, Basis, Λ, ΛNames, v0, v1, function_names, response, Vector{Float64}(scale_el))
   pars = Pars(A, M, ΣV, ΣU, gamma, samp_inds, F, dF, State, a_V, A_V, nu_V, a_U, A_U, nu_U, ΣM, π)
 
   return pars, model
@@ -507,8 +513,8 @@ function update_A!(pars, model)
   dq = [ΔL(v[:, i], h[i], ϕ[i, :], ϕ_t[i, :], ΣVinv, ΣUinv, A, M, fcurr[i,:], fprime[i,:]) for i in 1:length(samp_inds)]
 
 
-  scale_el = 1 / 100
-  dq = mean(dq) + (1 / (model.T)) * (scale_el * sign.(A) + 2 * scale_el * A)
+  sel = reshape(model.scale_el, :, 1)
+  dq = mean(dq) + (1 / (model.T)) * (sel .* sign.(A) + 2 .* sel .* A)
 
 
   # pars.A = A - model.learning_rate * dq
@@ -641,9 +647,10 @@ function DEtection_sampler(Y,
   v1::Float64,
   Λ::Function,
   ΛNames::Vector{String};
-  degree = 4, orderTime = 1, latent_dim = size(Y, 1), covariates = nothing, nits = 2000, burnin = nits / 2, learning_rate_end = learning_rate)
-  
-  pars, model = create_pars(Y, TimeStep, nbasis, buffer, batch_size, learning_rate, v0, v1, Λ, ΛNames, degree = degree, orderTime = orderTime, latent_dim = latent_dim, covariates = covariates)
+  degree = 4, orderTime = 1, latent_dim = size(Y, 1), covariates = nothing, nits = 2000, burnin = nits / 2, learning_rate_end = learning_rate,
+  scale_el = fill(0.01, latent_dim))
+
+  pars, model = create_pars(Y, TimeStep, nbasis, buffer, batch_size, learning_rate, v0, v1, Λ, ΛNames, degree = degree, orderTime = orderTime, latent_dim = latent_dim, covariates = covariates, scale_el = scale_el)
 
   keep_samps = Int(nits - burnin)
   n_change = log10(learning_rate / learning_rate_end)

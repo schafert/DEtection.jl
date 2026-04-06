@@ -9,7 +9,7 @@ using Pipe: @pipe
 
 
 ###################### load data ######################
-@pipe hare = "../DEtection/data/hare_lynx_data.csv" |>
+@pipe hare = "data/hare_lynx_data.csv" |>
              CSV.File |>
              DataFrame
 
@@ -35,9 +35,9 @@ end
 
 ######################### run sampler #########################
 
-nbasis = 35
+nbasis = 40
 TimeStep = Vector(range(0.1, size(hare,1)*0.1, step = 0.1))
-batch_size = 10
+batch_size = 20
 buffer = 2
 v0 = 1e-6
 v1 = 1e4
@@ -51,7 +51,7 @@ model
 
 ######################### output #########################
 
-print_equation(["Hₜ", "Lₜ"], model, pars, posterior, cutoff_prob=0.95, p=0.95)
+print_equation(["Hₜ", "Lₜ"], model, pars, posterior, cutoff_prob=0.005, p=0.95)
 
 post = posterior_summary(model, pars, posterior)
 post.M
