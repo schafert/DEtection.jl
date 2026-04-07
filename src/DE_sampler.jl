@@ -62,6 +62,9 @@ mutable struct Model
   # elastic net regularization scale (one value per component/row of A)
   scale_el::Vector{Float64}
 
+  # optional fixed gamma mask: N×D matrix where -1 = free, 0 = fixed to 0, 1 = fixed to 1
+  gamma_mask::Union{Nothing, Matrix{Int}}
+
 end
 
 Base.show(io::IO, model::Model) =
@@ -77,7 +80,8 @@ Base.show(io::IO, model::Model) =
     " ├─── learning rate: ", model.learning_rate, '\n',
     " ├─── elastic net scale: ", model.scale_el, '\n',
     " ├─── time buffer: ", model.buffer, '\n',
-    " └─── time batch size: ", model.batch_size)
+    " ├─── time batch size: ", model.batch_size, '\n',
+    " └─── gamma mask: ", model.gamma_mask === nothing ? "none" : "$(sum(model.gamma_mask .!= -1)) fixed entries")
 #
 
 """
@@ -186,7 +190,7 @@ function create_pars(Y::Array{Float64,2},
   Λ::Function,
   ΛNames::Vector{String};
   degree = 4, orderTime = 1, latent_dim = size(Y, 1), covariates = nothing,
-  scale_el = fill(0.01, latent_dim))
+  scale_el = fill(0.01, latent_dim), gamma_mask = nothing, π_init = fill(0.5, latent_dim))
 
   L = size(Y, 1)
   T = size(Y, 2)
@@ -237,9 +241,16 @@ function create_pars(Y::Array{Float64,2},
   nu_U = 2
 
   # SSVS parameters
-  gamma = ones(N, D)
+  gamma = ones(Int, N, D)
+  if gamma_mask !== nothing
+    for idx in eachindex(gamma_mask)
+      if gamma_mask[idx] != -1
+        gamma[idx] = gamma_mask[idx]
+      end
+    end
+  end
   ΣM = Diagonal([(vec(gamma)[i] == 1 ? v1 : v0) for i in 1:(D*N)])
-  π = 0.5 * ones(N)
+  π = Vector{Float64}(π_init)
 
 
   Φtmp = [Basis.TimeDerivative[ΛNames[i]] for i in 1:length(ΛNames)]
@@ -252,7 +263,7 @@ function create_pars(Y::Array{Float64,2},
   response = State.StateNames[end]
 
   # store model and parameter values
-  model = Model(T, L, N, D, nbasis, buffer, batch_size, TimeStep, learning_rate, inner_inds, V, H, X, Basis, Λ, ΛNames, v0, v1, function_names, response, Vector{Float64}(scale_el))
+  model = Model(T, L, N, D, nbasis, buffer, batch_size, TimeStep, learning_rate, inner_inds, V, H, X, Basis, Λ, ΛNames, v0, v1, function_names, response, Vector{Float64}(scale_el), gamma_mask)
   pars = Pars(A, M, ΣV, ΣU, gamma, samp_inds, F, dF, State, a_V, A_V, nu_V, a_U, A_U, nu_U, ΣM, π)
 
   return pars, model
@@ -270,7 +281,7 @@ function create_pars(Y::Array{Union{Missing,Float64},2},
   Λ::Function,
   ΛNames::Vector{String};
   degree = 4, orderTime = 1, latent_dim = size(Y, 1), covariates = nothing,
-  scale_el = fill(0.01, latent_dim))
+  scale_el = fill(0.01, latent_dim), gamma_mask = nothing, π_init = fill(0.5, latent_dim))
 
   L = size(Y, 1)
   T = size(Y, 2)
@@ -345,9 +356,16 @@ function create_pars(Y::Array{Union{Missing,Float64},2},
   nu_U = 2
 
   # SSVS parameters
-  gamma = ones(N, D)
+  gamma = ones(Int, N, D)
+  if gamma_mask !== nothing
+    for idx in eachindex(gamma_mask)
+      if gamma_mask[idx] != -1
+        gamma[idx] = gamma_mask[idx]
+      end
+    end
+  end
   ΣM = Diagonal([(vec(gamma)[i] == 1 ? v1 : v0) for i in 1:(D*N)])
-  π = 0.5 * ones(N)
+  π = Vector{Float64}(π_init)
 
 
   Φtmp = [Basis.TimeDerivative[ΛNames[i]] for i in 1:length(ΛNames)]
@@ -360,7 +378,7 @@ function create_pars(Y::Array{Union{Missing,Float64},2},
   response = State.StateNames[end]
 
   # store model and parameter values
-  model = Model(T, L, N, D, nbasis, buffer, batch_size, TimeStep, learning_rate, inner_inds, V, H, X, Basis, Λ, ΛNames, v0, v1, function_names, response, Vector{Float64}(scale_el))
+  model = Model(T, L, N, D, nbasis, buffer, batch_size, TimeStep, learning_rate, inner_inds, V, H, X, Basis, Λ, ΛNames, v0, v1, function_names, response, Vector{Float64}(scale_el), gamma_mask)
   pars = Pars(A, M, ΣV, ΣU, gamma, samp_inds, F, dF, State, a_V, A_V, nu_V, a_U, A_U, nu_U, ΣM, π)
 
   return pars, model
@@ -398,13 +416,23 @@ Used within sgmcmc() function.
 Gibbs step for latent SSVS variables.
 """
 function update_gamma!(pars, model)
-  
+
   p1 = pdf.(Normal(0, sqrt(model.v1)), pars.M) .* pars.π
   p0 = pdf.(Normal(0, sqrt(model.v0)), pars.M) .* (1 .- pars.π)
   p = p1 ./ (p1 + p0)
   p = replace!(p, NaN => 0)
 
   pars.gamma = rand.(Binomial.(1, p))
+
+  # apply fixed gamma mask: override sampled values for any masked entries
+  if model.gamma_mask !== nothing
+    for idx in eachindex(model.gamma_mask)
+      if model.gamma_mask[idx] != -1
+        pars.gamma[idx] = model.gamma_mask[idx]
+      end
+    end
+  end
+
   pars.ΣM = Diagonal([(vec(pars.gamma)[i] == 1 ? model.v1 : model.v0) for i in 1:(model.D*model.N)])
   # for i in 1:model.N
   #   pars.π[i] = rand(Beta(1 + sum(pars.gamma[i, :]), 1 + sum(1 .- pars.gamma[i, :])))
@@ -648,9 +676,9 @@ function DEtection_sampler(Y,
   Λ::Function,
   ΛNames::Vector{String};
   degree = 4, orderTime = 1, latent_dim = size(Y, 1), covariates = nothing, nits = 2000, burnin = nits / 2, learning_rate_end = learning_rate,
-  scale_el = fill(0.01, latent_dim))
+  scale_el = fill(0.01, latent_dim), gamma_mask = nothing, π_init = fill(0.5, latent_dim))
 
-  pars, model = create_pars(Y, TimeStep, nbasis, buffer, batch_size, learning_rate, v0, v1, Λ, ΛNames, degree = degree, orderTime = orderTime, latent_dim = latent_dim, covariates = covariates, scale_el = scale_el)
+  pars, model = create_pars(Y, TimeStep, nbasis, buffer, batch_size, learning_rate, v0, v1, Λ, ΛNames, degree = degree, orderTime = orderTime, latent_dim = latent_dim, covariates = covariates, scale_el = scale_el, gamma_mask = gamma_mask, π_init = π_init)
 
   keep_samps = Int(nits - burnin)
   n_change = log10(learning_rate / learning_rate_end)
