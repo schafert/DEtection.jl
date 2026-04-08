@@ -26,3 +26,6 @@ Manifest.toml
 
 # ignore data file
 data/
+
+# MACOS specific files
+.DS_Store
