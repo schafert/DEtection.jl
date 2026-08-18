@@ -27,5 +27,8 @@ Manifest.toml
 # ignore data file
 data/
 
+# generated example outputs (plots, run logs)
+results/
+
 # MACOS specific files
 .DS_Store
