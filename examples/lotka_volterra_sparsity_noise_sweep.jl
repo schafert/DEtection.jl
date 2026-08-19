@@ -141,6 +141,17 @@ function run_config(label, R_var, keep_every; seed = 42)
 
     Z = make_observations(seed, R_var, keep_every)
 
+    # Reseed before the sampler so each config's MCMC exploration draws from
+    # an independent RNG stream. Without this, make_observations() always
+    # consumes the same number of random draws regardless of R_var, so
+    # DEtection_sampler starts every config at a fixed keep_every from a
+    # byte-identical RNG state — at high sparsity, where the SSVS inclusion
+    # step (update_gamma!) saturates to a near-deterministic function of that
+    # shared stream, this silently locks gamma's trajectory in lockstep
+    # across noise levels instead of letting it respond to the data. See
+    # 2026-08-19_lv-closure-experiments.qmd (OneDrive) for the investigation.
+    Random.seed!(seed + keep_every * 1000 + round(Int, R_var * 100))
+
     model, pars, posterior = DEtection_sampler(
         Z, TimeStep, nbasis, buffer, batch_size, learning_rate, v0, v1, Λ, ΛNames,
         nits = nits, scale_el = scale_el, gamma_mask = mask2
