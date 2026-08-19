@@ -200,14 +200,16 @@ yticks_lab = ["$(rv)" for rv in noise_levels]
 p_gamma = heatmap(xticks_lab, yticks_lab, closure_grid,
                    title = "Closure-term inclusion prob (truth=1)",
                    xlabel = "fraction of points kept", ylabel = "noise variance R",
-                   clims = (0, 1), color = :viridis)
+                   clims = (0, 1), color = :viridis,
+                   left_margin = 12Plots.mm, bottom_margin = 12Plots.mm)
 
 p_err = heatmap(xticks_lab, yticks_lab, err_grid,
                  title = "abs error, M[u1*u2, eq1] (truth=-1.0)",
                  xlabel = "fraction of points kept", ylabel = "noise variance R",
-                 color = :inferno)
+                 color = :inferno,
+                 left_margin = 12Plots.mm, bottom_margin = 12Plots.mm)
 
-p_grid = plot(p_gamma, p_err, layout = (1, 2), size = (1100, 450))
+p_grid = plot(p_gamma, p_err, layout = (1, 2), size = (1300, 550), margin = 5Plots.mm)
 display(p_grid)
 savefig(p_grid, joinpath(@__DIR__, "../results/lv_sparsity_noise_grid.png"))
 println("\nGrid heatmaps saved to results/lv_sparsity_noise_grid.png")
