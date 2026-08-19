@@ -32,3 +32,6 @@ results/
 
 # MACOS specific files
 .DS_Store
+
+# Claude Code local settings / worktrees
+.claude/
