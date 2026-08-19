@@ -309,12 +309,14 @@ function create_pars(Y::Array{Union{Missing,Float64},2},
   # construct data for inital guess, not saved for sampled
   VM = copy(Y)
   tmp_ind = hcat(getindex.(findall(ismissing, VM), 1), getindex.(findall(ismissing, VM), 2))
-  if tmp_ind[1,2] == 1
-    tmp_ind[1,2] = 3
-  end
-  tmp_ind[:,2] = tmp_ind[:,2] .- 1
+  if size(tmp_ind, 1) > 0
+    if tmp_ind[1,2] == 1
+      tmp_ind[1,2] = 3
+    end
+    tmp_ind[:,2] = tmp_ind[:,2] .- 1
 
-  VM[na_inds[:,1], na_inds[:,2]] = VM[tmp_ind[:,1], tmp_ind[:,2]]
+    VM[na_inds[:,1], na_inds[:,2]] = VM[tmp_ind[:,1], tmp_ind[:,2]]
+  end
   still_missing = hcat(getindex.(findall(ismissing, VM), 1), getindex.(findall(ismissing, VM),2))
   while size(still_missing, 1) > 1
     tmp_ind = copy(still_missing)
